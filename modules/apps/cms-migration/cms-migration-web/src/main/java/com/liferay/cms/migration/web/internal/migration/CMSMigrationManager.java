@@ -6,6 +6,7 @@
 package com.liferay.cms.migration.web.internal.migration;
 
 import com.liferay.asset.kernel.service.AssetEntryLocalService;
+import com.liferay.blogs.model.BlogsEntry;
 import com.liferay.cms.migration.web.internal.background.task.CMSMigrationBackgroundTaskStatusMessageSender;
 import com.liferay.cms.migration.web.internal.constants.CMSMigrationConstants;
 import com.liferay.cms.migration.web.internal.migration.content.BlogsEntryMigrator;
@@ -18,11 +19,13 @@ import com.liferay.cms.migration.web.internal.migration.reference.HTMLReferenceR
 import com.liferay.cms.migration.web.internal.migration.reference.LayoutReferenceRewriter;
 import com.liferay.cms.migration.web.internal.migration.reference.PortletReferenceRewriter;
 import com.liferay.cms.migration.web.internal.migration.reference.SiteNavigationMenuItemReferenceRewriter;
+import com.liferay.cms.migration.web.internal.migration.structure.ObjectDefinitionMigrator;
 import com.liferay.cms.migration.web.internal.migration.template.DisplayPageTemplateMigrator;
 import com.liferay.cms.migration.web.internal.migration.template.JournalTemplateMigrator;
 import com.liferay.cms.migration.web.internal.migration.template.WidgetTemplateMigrator;
 import com.liferay.depot.service.DepotEntryGroupRelLocalService;
 import com.liferay.document.library.kernel.model.DLFileEntry;
+import com.liferay.journal.model.JournalArticle;
 import com.liferay.object.constants.ObjectFieldConstants;
 import com.liferay.object.model.ObjectEntry;
 import com.liferay.object.model.ObjectField;
@@ -30,6 +33,7 @@ import com.liferay.object.service.ObjectDefinitionLocalService;
 import com.liferay.object.service.ObjectEntryLocalService;
 import com.liferay.object.service.ObjectFieldLocalService;
 import com.liferay.petra.string.StringBundler;
+import com.liferay.petra.string.StringPool;
 import com.liferay.portal.kernel.dao.orm.DynamicQuery;
 import com.liferay.portal.kernel.dao.orm.OrderFactoryUtil;
 import com.liferay.portal.kernel.dao.orm.ProjectionFactoryUtil;
@@ -39,6 +43,8 @@ import com.liferay.portal.kernel.model.Layout;
 import com.liferay.portal.kernel.service.GroupLocalService;
 import com.liferay.portal.kernel.service.LayoutLocalService;
 import com.liferay.portal.kernel.service.ServiceContext;
+import com.liferay.portal.kernel.util.HashMapBuilder;
+import com.liferay.portal.kernel.util.StringUtil;
 
 import java.io.Serializable;
 
@@ -73,6 +79,7 @@ public class CMSMigrationManager {
 		LayoutLocalService layoutLocalService,
 		LayoutReferenceRewriter layoutReferenceRewriter,
 		ObjectDefinitionLocalService objectDefinitionLocalService,
+		ObjectDefinitionMigrator objectDefinitionMigrator,
 		ObjectEntryLocalService objectEntryLocalService,
 		ObjectEntryScopeMigrator objectEntryScopeMigrator,
 		ObjectFieldLocalService objectFieldLocalService,
@@ -97,6 +104,7 @@ public class CMSMigrationManager {
 		_layoutLocalService = layoutLocalService;
 		_layoutReferenceRewriter = layoutReferenceRewriter;
 		_objectDefinitionLocalService = objectDefinitionLocalService;
+		_objectDefinitionMigrator = objectDefinitionMigrator;
 		_objectEntryLocalService = objectEntryLocalService;
 		_objectEntryScopeMigrator = objectEntryScopeMigrator;
 		_objectFieldLocalService = objectFieldLocalService;
@@ -129,10 +137,23 @@ public class CMSMigrationManager {
 					cmsMigrationContext, fileEntry);
 			});
 
-		_sendPhase(CMSMigrationConstants.PHASE_FOLDERS, 0);
+		List<Group> rewriteGroups = _getRewriteGroups(cmsMigrationContext);
+
+		CMSMigrationPlan cmsMigrationPlan = _createCMSMigrationPlan(
+			cmsMigrationContext, rewriteGroups);
+
+		cmsMigrationPlan.send();
 
 		if (cmsMigrationContext.isMigrateFileEntries()) {
+			cmsMigrationPlan.startPhase(
+				CMSMigrationConstants.BAR_DOCUMENTS_AND_MEDIA,
+				CMSMigrationConstants.PHASE_FOLDERS);
+
 			_folderMigrator.migrateDLFolders(cmsMigrationContext);
+
+			cmsMigrationPlan.finishPhase(
+				CMSMigrationConstants.BAR_DOCUMENTS_AND_MEDIA,
+				CMSMigrationConstants.PHASE_FOLDERS);
 		}
 		else {
 			_folderMigrator.registerDLRootFolder(cmsMigrationContext);
@@ -141,93 +162,209 @@ public class CMSMigrationManager {
 		if (cmsMigrationContext.isMigrateBlogsEntries() ||
 			cmsMigrationContext.isMigrateJournalArticles()) {
 
+			String bar = CMSMigrationConstants.BAR_BLOGS;
+
+			if (cmsMigrationContext.isMigrateJournalArticles()) {
+				bar = CMSMigrationConstants.BAR_WEB_CONTENT;
+			}
+
+			cmsMigrationPlan.startPhase(
+				bar, CMSMigrationConstants.PHASE_JOURNAL_FOLDERS);
+
 			_folderMigrator.migrateJournalFolders(cmsMigrationContext);
+
+			cmsMigrationPlan.finishPhase(
+				bar, CMSMigrationConstants.PHASE_JOURNAL_FOLDERS);
 		}
 
 		if (cmsMigrationContext.isMigrateFileEntries()) {
-			_sendPhase(
-				CMSMigrationConstants.PHASE_FILE_ENTRIES,
-				_fileEntryMigrator.getCount(cmsMigrationContext));
+			cmsMigrationPlan.startPhase(
+				CMSMigrationConstants.BAR_DOCUMENTS_AND_MEDIA,
+				CMSMigrationConstants.PHASE_FILE_ENTRIES);
 
 			_fileEntryMigrator.migrateAll(cmsMigrationContext);
+
+			cmsMigrationPlan.finishPhase(
+				CMSMigrationConstants.BAR_DOCUMENTS_AND_MEDIA,
+				CMSMigrationConstants.PHASE_FILE_ENTRIES);
 		}
 
 		if (cmsMigrationContext.isMigrateJournalArticles()) {
-			_sendPhase(
-				CMSMigrationConstants.PHASE_JOURNAL_ARTICLES,
-				_journalArticleMigrator.getJournalArticleResources(
-					cmsMigrationContext
-				).size());
+			cmsMigrationPlan.startPhase(
+				CMSMigrationConstants.BAR_WEB_CONTENT,
+				CMSMigrationConstants.PHASE_JOURNAL_ARTICLES);
 
 			_journalArticleMigrator.migrateAll(cmsMigrationContext);
 
-			_sendPhase(
+			cmsMigrationPlan.finishPhase(
+				CMSMigrationConstants.BAR_WEB_CONTENT,
+				CMSMigrationConstants.PHASE_JOURNAL_ARTICLES);
+
+			cmsMigrationPlan.startPhase(
+				CMSMigrationConstants.BAR_WEB_CONTENT,
 				CMSMigrationConstants.PHASE_TEMPLATES,
-				cmsMigrationContext.getDDMStructures(
-				).size());
+				_journalTemplateMigrator.getCount(cmsMigrationContext));
 
 			_journalTemplateMigrator.migrate(cmsMigrationContext);
+
+			cmsMigrationPlan.finishPhase(
+				CMSMigrationConstants.BAR_WEB_CONTENT,
+				CMSMigrationConstants.PHASE_TEMPLATES);
 		}
 
 		if (cmsMigrationContext.isMigrateBlogsEntries()) {
-			_sendPhase(
-				CMSMigrationConstants.PHASE_BLOGS_ENTRIES,
-				_blogsEntryMigrator.getBlogsEntries(
-					cmsMigrationContext
-				).size());
+			cmsMigrationPlan.startPhase(
+				CMSMigrationConstants.BAR_BLOGS,
+				CMSMigrationConstants.PHASE_BLOGS_ENTRIES);
 
 			_blogsEntryMigrator.migrateAll(cmsMigrationContext);
+
+			cmsMigrationPlan.finishPhase(
+				CMSMigrationConstants.BAR_BLOGS,
+				CMSMigrationConstants.PHASE_BLOGS_ENTRIES);
 		}
 
 		if (cmsMigrationContext.isMigrateObjectEntries()) {
-			_sendPhase(
-				CMSMigrationConstants.PHASE_OBJECT_ENTRIES,
-				_objectEntryScopeMigrator.getCount(cmsMigrationContext));
+			cmsMigrationPlan.startPhase(
+				CMSMigrationConstants.BAR_OBJECTS,
+				CMSMigrationConstants.PHASE_OBJECT_ENTRIES);
 
 			_objectEntryScopeMigrator.migrateAll(cmsMigrationContext);
+
+			cmsMigrationPlan.finishPhase(
+				CMSMigrationConstants.BAR_OBJECTS,
+				CMSMigrationConstants.PHASE_OBJECT_ENTRIES);
 		}
 
-		_rewriteContentLinks(cmsMigrationContext);
+		_rewriteContentLinks(cmsMigrationContext, cmsMigrationPlan);
 
-		if (!cmsMigrationContext.isRewritePages()) {
-			return;
+		if (cmsMigrationContext.isRewritePages()) {
+			_updatePages(cmsMigrationContext, cmsMigrationPlan, rewriteGroups);
 		}
 
-		_rewriteReferences(cmsMigrationContext);
+		if (cmsMigrationContext.isMigrateRepeatableFields()) {
+			cmsMigrationPlan.finishPhase(
+				CMSMigrationConstants.BAR_REPEATABLE_FIELDS,
+				CMSMigrationConstants.PHASE_REPEATABLE_GROUPS);
+		}
+	}
 
-		Group sourceGroup = cmsMigrationContext.getSourceGroup();
+	private CMSMigrationPlan _createCMSMigrationPlan(
+			CMSMigrationContext cmsMigrationContext, List<Group> rewriteGroups)
+		throws Exception {
 
-		if (!sourceGroup.isCompany()) {
-			_widgetTemplateMigrator.migrate(cmsMigrationContext);
+		CMSMigrationPlan cmsMigrationPlan = new CMSMigrationPlan(
+			_cmsMigrationBackgroundTaskStatusMessageSender);
 
-			return;
+		if (cmsMigrationContext.isMigrateFileEntries()) {
+			long fileEntriesCount = _fileEntryMigrator.getCount(
+				cmsMigrationContext);
+
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_DOCUMENTS_AND_MEDIA,
+				CMSMigrationConstants.PHASE_FOLDERS,
+				_folderMigrator.getDLFoldersCount(cmsMigrationContext));
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_DOCUMENTS_AND_MEDIA,
+				CMSMigrationConstants.PHASE_FILE_ENTRIES, fileEntriesCount);
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_DOCUMENTS_AND_MEDIA,
+				CMSMigrationConstants.PHASE_CONTENT_LINKS, fileEntriesCount);
 		}
 
-		try {
-			for (Group group : _getReferencingGroups(cmsMigrationContext)) {
-				cmsMigrationContext.setRewriteGroup(group);
+		if (cmsMigrationContext.isMigrateJournalArticles()) {
+			long journalArticlesCount = _journalArticleMigrator.getCount(
+				cmsMigrationContext);
 
-				_rewriteReferences(cmsMigrationContext);
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_WEB_CONTENT,
+				CMSMigrationConstants.PHASE_JOURNAL_FOLDERS,
+				_folderMigrator.getJournalFoldersCount(cmsMigrationContext));
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_WEB_CONTENT,
+				CMSMigrationConstants.PHASE_JOURNAL_ARTICLES,
+				journalArticlesCount);
+			cmsMigrationPlan.addPendingPhase(
+				CMSMigrationConstants.BAR_WEB_CONTENT,
+				CMSMigrationConstants.PHASE_TEMPLATES);
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_WEB_CONTENT,
+				CMSMigrationConstants.PHASE_CONTENT_LINKS,
+				journalArticlesCount);
+		}
 
-				Group liveGroup = group;
-
-				if (group.isStagingGroup()) {
-					liveGroup = group.getLiveGroup();
-				}
-
-				if (liveGroup.isSite()) {
-					_depotEntryGroupRelLocalService.addDepotEntryGroupRel(
-						cmsMigrationContext.getDepotEntry(
-						).getDepotEntryId(),
-						liveGroup.getGroupId());
-				}
+		if (cmsMigrationContext.isMigrateBlogsEntries()) {
+			if (!cmsMigrationContext.isMigrateJournalArticles()) {
+				cmsMigrationPlan.addPhase(
+					CMSMigrationConstants.BAR_BLOGS,
+					CMSMigrationConstants.PHASE_JOURNAL_FOLDERS,
+					_folderMigrator.getJournalFoldersCount(
+						cmsMigrationContext));
 			}
-		}
-		finally {
-			cmsMigrationContext.setRewriteGroup(sourceGroup);
+
+			long blogsEntriesCount = _blogsEntryMigrator.getCount(
+				cmsMigrationContext);
+
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_BLOGS,
+				CMSMigrationConstants.PHASE_BLOGS_ENTRIES, blogsEntriesCount);
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_BLOGS,
+				CMSMigrationConstants.PHASE_CONTENT_LINKS, blogsEntriesCount);
 		}
 
-		_widgetTemplateMigrator.migrate(cmsMigrationContext);
+		if (cmsMigrationContext.isMigrateObjectEntries()) {
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_OBJECTS,
+				CMSMigrationConstants.PHASE_OBJECT_ENTRIES,
+				_objectEntryScopeMigrator.getCount(cmsMigrationContext));
+		}
+
+		if (cmsMigrationContext.isMigrateRepeatableFields()) {
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_REPEATABLE_FIELDS,
+				CMSMigrationConstants.PHASE_REPEATABLE_GROUPS,
+				_objectDefinitionMigrator.getEstimatedRepeatableGroupsCount(
+					cmsMigrationContext));
+		}
+
+		if (cmsMigrationContext.isRewritePages()) {
+			long collectionsCount = 0;
+			long displayPageTemplatesCount = 0;
+			long pagesCount = 0;
+
+			for (Group group : rewriteGroups) {
+				collectionsCount += _assetListEntryReferenceRewriter.getCount(
+					group.getGroupId());
+				displayPageTemplatesCount +=
+					_displayPageTemplateMigrator.getCount(group.getGroupId());
+
+				pagesCount += _getPagesCount(group.getGroupId());
+			}
+
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_UPDATE_PAGES,
+				CMSMigrationConstants.PHASE_COLLECTIONS, collectionsCount);
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_UPDATE_PAGES,
+				CMSMigrationConstants.PHASE_DISPLAY_PAGE_TEMPLATES,
+				displayPageTemplatesCount);
+			cmsMigrationPlan.addPhase(
+				CMSMigrationConstants.BAR_UPDATE_PAGES,
+				CMSMigrationConstants.PHASE_PAGES, pagesCount);
+		}
+
+		return cmsMigrationPlan;
+	}
+
+	private String _getContentLinksBar(List<String> bars, String key) {
+		String bar = _bars.get(StringUtil.extractFirst(key, StringPool.POUND));
+
+		if (bars.contains(bar)) {
+			return bar;
+		}
+
+		return bars.get(0);
 	}
 
 	private List<Layout> _getLayouts(long groupId) {
@@ -238,11 +375,17 @@ public class CMSMigrationManager {
 		return _layoutLocalService.dynamicQuery(dynamicQuery);
 	}
 
-	/**
-	 * Returns every group, other than the source group and the target space,
-	 * that has pages. Their pages may reference the content of the Global
-	 * site.
-	 */
+	private long _getLayoutsCount(long groupId) {
+		List<Layout> layouts = _getLayouts(groupId);
+
+		return layouts.size();
+	}
+
+	private long _getPagesCount(long groupId) {
+		return _getLayoutsCount(groupId) +
+			(2 * _displayPageTemplateMigrator.getCount(groupId));
+	}
+
 	private List<Group> _getReferencingGroups(
 		CMSMigrationContext cmsMigrationContext) {
 
@@ -275,16 +418,65 @@ public class CMSMigrationManager {
 		return groups;
 	}
 
-	private void _rewriteContentLinks(CMSMigrationContext cmsMigrationContext) {
-		List<ObjectEntry> objectEntries = new ArrayList<>(
-			cmsMigrationContext.getObjectEntries());
+	private List<Group> _getRewriteGroups(
+		CMSMigrationContext cmsMigrationContext) {
 
-		_sendPhase(
-			CMSMigrationConstants.PHASE_CONTENT_LINKS, objectEntries.size());
+		List<Group> rewriteGroups = new ArrayList<>();
 
-		for (ObjectEntry objectEntry : objectEntries) {
+		if (!cmsMigrationContext.isRewritePages()) {
+			return rewriteGroups;
+		}
+
+		Group sourceGroup = cmsMigrationContext.getSourceGroup();
+
+		rewriteGroups.add(sourceGroup);
+
+		if (sourceGroup.isCompany()) {
+			rewriteGroups.addAll(_getReferencingGroups(cmsMigrationContext));
+		}
+
+		return rewriteGroups;
+	}
+
+	private void _rewriteContentLinks(
+		CMSMigrationContext cmsMigrationContext,
+		CMSMigrationPlan cmsMigrationPlan) {
+
+		List<String> bars = cmsMigrationPlan.getBars(
+			CMSMigrationConstants.PHASE_CONTENT_LINKS);
+
+		List<Map.Entry<String, ObjectEntry>> entries = new ArrayList<>(
+			cmsMigrationContext.getObjectEntriesMap(
+			).entrySet());
+
+		if (!bars.isEmpty()) {
+			Map<String, Long> barTotals = new HashMap<>();
+
+			for (Map.Entry<String, ObjectEntry> entry : entries) {
+				barTotals.merge(
+					_getContentLinksBar(bars, entry.getKey()), 1L, Long::sum);
+			}
+
+			for (String bar : bars) {
+				cmsMigrationPlan.startPhase(
+					bar, CMSMigrationConstants.PHASE_CONTENT_LINKS,
+					barTotals.getOrDefault(bar, 0L));
+			}
+		}
+
+		for (Map.Entry<String, ObjectEntry> entry : entries) {
+			ObjectEntry objectEntry = entry.getValue();
+
 			try {
-				cmsMigrationContext.sendStatus(objectEntry.getTitleValue());
+				if (bars.isEmpty()) {
+					cmsMigrationContext.sendStatus(objectEntry.getTitleValue());
+				}
+				else {
+					cmsMigrationContext.sendStatus(
+						_getContentLinksBar(bars, entry.getKey()),
+						CMSMigrationConstants.PHASE_CONTENT_LINKS,
+						objectEntry.getTitleValue());
+				}
 
 				_rewriteContentLinks(cmsMigrationContext, objectEntry);
 			}
@@ -297,6 +489,11 @@ public class CMSMigrationManager {
 						exception.getMessage())
 				);
 			}
+		}
+
+		for (String bar : bars) {
+			cmsMigrationPlan.finishPhase(
+				bar, CMSMigrationConstants.PHASE_CONTENT_LINKS);
 		}
 	}
 
@@ -379,19 +576,10 @@ public class CMSMigrationManager {
 		}
 	}
 
-	private void _rewriteReferences(CMSMigrationContext cmsMigrationContext) {
-		_sendPhase(CMSMigrationConstants.PHASE_DISPLAY_PAGE_TEMPLATES, 0);
+	private void _rewritePages(CMSMigrationContext cmsMigrationContext) {
+		for (Layout layout :
+				_getLayouts(cmsMigrationContext.getRewriteGroupId())) {
 
-		_assetListEntryReferenceRewriter.rewrite(cmsMigrationContext);
-
-		_displayPageTemplateMigrator.migrate(cmsMigrationContext);
-
-		List<Layout> layouts = _getLayouts(
-			cmsMigrationContext.getRewriteGroupId());
-
-		_sendPhase(CMSMigrationConstants.PHASE_PAGES, layouts.size());
-
-		for (Layout layout : layouts) {
 			cmsMigrationContext.sendStatus(layout.getFriendlyURL());
 
 			try {
@@ -412,10 +600,90 @@ public class CMSMigrationManager {
 		_siteNavigationMenuItemReferenceRewriter.rewrite(cmsMigrationContext);
 	}
 
-	private void _sendPhase(String phase, long total) {
-		_cmsMigrationBackgroundTaskStatusMessageSender.sendPhaseStatusMessage(
-			phase, total);
+	private void _updatePages(
+			CMSMigrationContext cmsMigrationContext,
+			CMSMigrationPlan cmsMigrationPlan, List<Group> rewriteGroups)
+		throws Exception {
+
+		long pagesCount = 0;
+
+		for (Group group : rewriteGroups) {
+			pagesCount += _getPagesCount(group.getGroupId());
+		}
+
+		Group sourceGroup = cmsMigrationContext.getSourceGroup();
+
+		try {
+			for (Group group : rewriteGroups) {
+				cmsMigrationContext.setRewriteGroup(group);
+
+				long groupPagesCount = _getPagesCount(group.getGroupId());
+
+				cmsMigrationPlan.startPhase(
+					CMSMigrationConstants.BAR_UPDATE_PAGES,
+					CMSMigrationConstants.PHASE_COLLECTIONS);
+
+				_assetListEntryReferenceRewriter.rewrite(cmsMigrationContext);
+
+				cmsMigrationPlan.startPhase(
+					CMSMigrationConstants.BAR_UPDATE_PAGES,
+					CMSMigrationConstants.PHASE_DISPLAY_PAGE_TEMPLATES);
+
+				_displayPageTemplateMigrator.migrate(cmsMigrationContext);
+
+				pagesCount -= groupPagesCount;
+
+				pagesCount += _getLayoutsCount(group.getGroupId());
+
+				cmsMigrationPlan.startPhase(
+					CMSMigrationConstants.BAR_UPDATE_PAGES,
+					CMSMigrationConstants.PHASE_PAGES, pagesCount);
+
+				_rewritePages(cmsMigrationContext);
+
+				if (group.getGroupId() == sourceGroup.getGroupId()) {
+					continue;
+				}
+
+				Group liveGroup = group;
+
+				if (group.isStagingGroup()) {
+					liveGroup = group.getLiveGroup();
+				}
+
+				if (liveGroup.isSite()) {
+					_depotEntryGroupRelLocalService.addDepotEntryGroupRel(
+						cmsMigrationContext.getDepotEntry(
+						).getDepotEntryId(),
+						liveGroup.getGroupId());
+				}
+			}
+		}
+		finally {
+			cmsMigrationContext.setRewriteGroup(sourceGroup);
+		}
+
+		cmsMigrationPlan.finishPhase(
+			CMSMigrationConstants.BAR_UPDATE_PAGES,
+			CMSMigrationConstants.PHASE_COLLECTIONS);
+		cmsMigrationPlan.finishPhase(
+			CMSMigrationConstants.BAR_UPDATE_PAGES,
+			CMSMigrationConstants.PHASE_DISPLAY_PAGE_TEMPLATES);
+		cmsMigrationPlan.finishPhase(
+			CMSMigrationConstants.BAR_UPDATE_PAGES,
+			CMSMigrationConstants.PHASE_PAGES);
+
+		_widgetTemplateMigrator.migrate(cmsMigrationContext);
 	}
+
+	private static final Map<String, String> _bars = HashMapBuilder.put(
+		BlogsEntry.class.getName(), CMSMigrationConstants.BAR_BLOGS
+	).put(
+		DLFileEntry.class.getName(),
+		CMSMigrationConstants.BAR_DOCUMENTS_AND_MEDIA
+	).put(
+		JournalArticle.class.getName(), CMSMigrationConstants.BAR_WEB_CONTENT
+	).build();
 
 	private final AssetEntryLocalService _assetEntryLocalService;
 	private final AssetListEntryReferenceRewriter
@@ -435,6 +703,7 @@ public class CMSMigrationManager {
 	private final LayoutLocalService _layoutLocalService;
 	private final LayoutReferenceRewriter _layoutReferenceRewriter;
 	private final ObjectDefinitionLocalService _objectDefinitionLocalService;
+	private final ObjectDefinitionMigrator _objectDefinitionMigrator;
 	private final ObjectEntryLocalService _objectEntryLocalService;
 	private final ObjectEntryScopeMigrator _objectEntryScopeMigrator;
 	private final ObjectFieldLocalService _objectFieldLocalService;

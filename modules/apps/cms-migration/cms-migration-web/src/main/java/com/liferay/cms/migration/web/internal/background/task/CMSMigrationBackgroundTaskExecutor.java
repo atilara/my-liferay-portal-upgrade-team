@@ -198,8 +198,7 @@ public class CMSMigrationBackgroundTaskExecutor
 					cmsMigrationReport,
 					GetterUtil.getBoolean(taskContextMap.get("rewritePages")),
 					serviceContext, sourceGroup,
-					cmsMigrationBackgroundTaskStatusMessageSender::
-						sendItemStatusMessage,
+					cmsMigrationBackgroundTaskStatusMessageSender,
 					StringUtil.split(
 						GetterUtil.getString(
 							taskContextMap.get("titleObjectFieldNames"))),
@@ -397,9 +396,10 @@ public class CMSMigrationBackgroundTaskExecutor
 			htmlReferenceRewriter, journalArticleMigrator,
 			journalTemplateMigrator, _layoutLocalService,
 			layoutReferenceRewriter, _objectDefinitionLocalService,
-			_objectEntryLocalService, objectEntryScopeMigrator,
-			_objectFieldLocalService, portletReferenceRewriter,
-			siteNavigationMenuItemReferenceRewriter, widgetTemplateMigrator);
+			objectDefinitionMigrator, _objectEntryLocalService,
+			objectEntryScopeMigrator, _objectFieldLocalService,
+			portletReferenceRewriter, siteNavigationMenuItemReferenceRewriter,
+			widgetTemplateMigrator);
 	}
 
 	@Reference

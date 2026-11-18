@@ -446,6 +446,11 @@ public class ObjectDefinitionMigrator {
 					cmsMigrationContext, ddmFormField, objectDefinition,
 					repeatableGroupObjectDefinition));
 
+			cmsMigrationContext.sendStatus(
+				CMSMigrationConstants.BAR_REPEATABLE_FIELDS,
+				CMSMigrationConstants.PHASE_REPEATABLE_GROUPS,
+				ddmFormField.getFieldReference());
+
 			_addRepeatableGroups(
 				cmsMigrationContext, ddmStructure, depth + 1, listTypeKey,
 				repeatableGroupObjectDefinition,
