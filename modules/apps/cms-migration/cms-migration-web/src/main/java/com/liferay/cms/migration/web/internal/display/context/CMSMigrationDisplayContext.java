@@ -7,13 +7,12 @@ package com.liferay.cms.migration.web.internal.display.context;
 
 import com.liferay.cms.migration.web.internal.background.task.CMSMigrationBackgroundTaskExecutor;
 import com.liferay.cms.migration.web.internal.migration.CMSMigrationReport;
+import com.liferay.cms.migration.web.internal.util.CMSMigrationProgressUtil;
 import com.liferay.depot.constants.DepotConstants;
 import com.liferay.depot.model.DepotEntry;
 import com.liferay.depot.service.DepotEntryLocalService;
 import com.liferay.portal.kernel.backgroundtask.BackgroundTask;
 import com.liferay.portal.kernel.backgroundtask.BackgroundTaskManager;
-import com.liferay.portal.kernel.backgroundtask.BackgroundTaskStatus;
-import com.liferay.portal.kernel.backgroundtask.BackgroundTaskStatusRegistryUtil;
 import com.liferay.portal.kernel.backgroundtask.constants.BackgroundTaskConstants;
 import com.liferay.portal.kernel.dao.orm.QueryUtil;
 import com.liferay.portal.kernel.json.JSONFactoryUtil;
@@ -28,7 +27,6 @@ import com.liferay.portal.kernel.service.GroupLocalService;
 import com.liferay.portal.kernel.theme.PortletDisplay;
 import com.liferay.portal.kernel.theme.ThemeDisplay;
 import com.liferay.portal.kernel.util.FastDateFormatFactoryUtil;
-import com.liferay.portal.kernel.util.GetterUtil;
 import com.liferay.portal.kernel.util.HashMapBuilder;
 import com.liferay.portal.kernel.util.ListUtil;
 import com.liferay.portal.kernel.util.PortalUtil;
@@ -177,41 +175,6 @@ public class CMSMigrationDisplayContext {
 		return groups;
 	}
 
-	private int _getOverallProgress(BackgroundTask backgroundTask) {
-		BackgroundTaskStatus backgroundTaskStatus =
-			BackgroundTaskStatusRegistryUtil.getBackgroundTaskStatus(
-				backgroundTask.getBackgroundTaskId());
-
-		if (backgroundTaskStatus == null) {
-			return 0;
-		}
-
-		return GetterUtil.getInteger(
-			backgroundTaskStatus.getAttribute("overallProgress"));
-	}
-
-	private int _getProgress(BackgroundTask backgroundTask) {
-		BackgroundTaskStatus backgroundTaskStatus =
-			BackgroundTaskStatusRegistryUtil.getBackgroundTaskStatus(
-				backgroundTask.getBackgroundTaskId());
-
-		if (backgroundTaskStatus == null) {
-			return 0;
-		}
-
-		long total = GetterUtil.getLong(
-			backgroundTaskStatus.getAttribute("total"));
-
-		if (total == 0) {
-			return 0;
-		}
-
-		long counter = GetterUtil.getLong(
-			backgroundTaskStatus.getAttribute("counter"));
-
-		return (int)Math.min(100, Math.round((double)counter / total * 100));
-	}
-
 	private List<DepotEntry> _getSpaces() {
 		return _depotEntryLocalService.getDepotEntries(
 			_themeDisplay.getCompanyId(), DepotConstants.TYPE_SPACE);
@@ -240,21 +203,6 @@ public class CMSMigrationDisplayContext {
 		}
 
 		return "secondary";
-	}
-
-	private JSONObject _getStatusJSONObject(BackgroundTask backgroundTask)
-		throws Exception {
-
-		BackgroundTaskStatus backgroundTaskStatus =
-			BackgroundTaskStatusRegistryUtil.getBackgroundTaskStatus(
-				backgroundTask.getBackgroundTaskId());
-
-		if (backgroundTaskStatus == null) {
-			return JSONFactoryUtil.createJSONObject();
-		}
-
-		return JSONFactoryUtil.createJSONObject(
-			backgroundTaskStatus.getAttributes());
 	}
 
 	private JSONObject _toJSONObject(BackgroundTask backgroundTask)
@@ -294,10 +242,6 @@ public class CMSMigrationDisplayContext {
 		).put(
 			"name", backgroundTask.getName()
 		).put(
-			"overallProgress", _getOverallProgress(backgroundTask)
-		).put(
-			"progress", _getProgress(backgroundTask)
-		).put(
 			"statusDisplayType",
 			_getStatusDisplayType(backgroundTask.getStatus())
 		).put(
@@ -324,19 +268,8 @@ public class CMSMigrationDisplayContext {
 		}
 
 		if (backgroundTask.isInProgress()) {
-			JSONObject statusJSONObject = _getStatusJSONObject(backgroundTask);
-
-			jsonObject.put(
-				"itemTitle", statusJSONObject.getString("itemTitle"));
-
-			String phase = statusJSONObject.getString("phase");
-
-			if (Validator.isNotNull(phase)) {
-				jsonObject.put(
-					"phaseLabel",
-					LanguageUtil.get(
-						_themeDisplay.getLocale(), "cms-migration-" + phase));
-			}
+			CMSMigrationProgressUtil.putProgress(
+				backgroundTask, jsonObject, _themeDisplay.getLocale());
 		}
 
 		return jsonObject;
