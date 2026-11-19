@@ -8,9 +8,9 @@ import React from 'react';
 
 import '@testing-library/jest-dom';
 
-import CMSMigration from '../src/main/resources/META-INF/resources/js/CMSMigration';
-import {IMigration} from '../src/main/resources/META-INF/resources/js/Migrations';
-import {COMPLETED_MIGRATION, QUEUED_MIGRATION} from './mocks/migrations';
+import CMSMigration from '../../src/main/resources/META-INF/resources/js/components/CMSMigration';
+import {IMigration} from '../../src/main/resources/META-INF/resources/js/components/Migrations';
+import {COMPLETED_MIGRATION, QUEUED_MIGRATION} from '../mocks/migrations';
 
 function renderCMSMigration(migrations: IMigration[]) {
 	return render(
