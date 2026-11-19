@@ -134,6 +134,57 @@ describe('Migrations', () => {
 		);
 	});
 
+	it('does not rerender a completed migration when the migrations are updated', () => {
+		const {rerender} = render(
+			<Migrations
+				migrationIncomplete={true}
+				migrations={[COMPLETED_MIGRATION, QUEUED_MIGRATION]}
+			/>
+		);
+
+		rerender(
+			<Migrations
+				migrationIncomplete={true}
+				migrations={[
+					{...COMPLETED_MIGRATION, name: 'Migration 1 Updated'},
+					{...QUEUED_MIGRATION, name: 'Migration 3 Updated'},
+				]}
+			/>
+		);
+
+		expect(
+			screen.getByRole('heading', {name: 'Migration 1'})
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole('heading', {name: 'Migration 3 Updated'})
+		).toBeInTheDocument();
+	});
+
+	it('rerenders a migration that becomes completed', () => {
+		const {rerender} = render(
+			<Migrations
+				migrationIncomplete={true}
+				migrations={[IN_PROGRESS_MIGRATION]}
+			/>
+		);
+
+		rerender(
+			<Migrations
+				migrationIncomplete={false}
+				migrations={[
+					{
+						...COMPLETED_MIGRATION,
+						backgroundTaskId:
+							IN_PROGRESS_MIGRATION.backgroundTaskId,
+					},
+				]}
+			/>
+		);
+
+		expect(screen.getByText('Successful')).toBeInTheDocument();
+		expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+	});
+
 	it('shows only the name, the date, and the status of a queued migration', () => {
 		render(
 			<Migrations

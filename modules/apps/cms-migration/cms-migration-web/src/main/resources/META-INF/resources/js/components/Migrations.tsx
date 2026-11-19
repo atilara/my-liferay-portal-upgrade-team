@@ -27,10 +27,28 @@ export interface IMigration {
 	warnings: string[];
 }
 
+interface IMigrationProps {
+	migration: IMigration;
+	numberFormat: Intl.NumberFormat;
+}
+
 interface IProps {
 	migrationIncomplete: boolean;
 	migrations: IMigration[];
 }
+
+/**
+ * A completed migration never changes, so its row, including the possibly
+ * long errors and warnings lists, is not rerendered by the polling updates.
+ */
+const Migration = React.memo(
+	MigrationRow,
+	(previousProps: IMigrationProps, nextProps: IMigrationProps) =>
+		previousProps.migration.completed &&
+		nextProps.migration.completed &&
+		previousProps.migration.backgroundTaskId ===
+			nextProps.migration.backgroundTaskId
+);
 
 export default function Migrations({migrationIncomplete, migrations}: IProps) {
 	const completedMigrations = migrations.filter(
@@ -106,13 +124,7 @@ export default function Migrations({migrationIncomplete, migrations}: IProps) {
 	);
 }
 
-function Migration({
-	migration,
-	numberFormat,
-}: {
-	migration: IMigration;
-	numberFormat: Intl.NumberFormat;
-}) {
+function MigrationRow({migration, numberFormat}: IMigrationProps) {
 	const {
 		backgroundTaskId,
 		completed,
