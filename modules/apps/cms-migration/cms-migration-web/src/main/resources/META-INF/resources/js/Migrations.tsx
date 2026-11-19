@@ -11,8 +11,11 @@ import {useSessionState} from 'frontend-js-components-web';
 import {sub} from 'frontend-js-web';
 import React, {useEffect, useMemo} from 'react';
 
+import MigrationBar, {IMigrationBar} from './components/MigrationBar';
+
 export interface IMigration {
 	backgroundTaskId: number;
+	bars?: IMigrationBar[];
 	completed: boolean;
 	counts: {label: string; value: number}[];
 	createDate: string;
@@ -20,8 +23,7 @@ export interface IMigration {
 	inProgress: boolean;
 	itemTitle?: string;
 	name: string;
-	phaseLabel?: string;
-	progress: number;
+	overallProgress?: number;
 	statusDisplayType: LabelDisplayType;
 	statusLabel: string;
 	warnings: string[];
@@ -127,6 +129,7 @@ function Migration({
 }) {
 	const {
 		backgroundTaskId,
+		bars,
 		completed,
 		counts,
 		createDate,
@@ -134,8 +137,7 @@ function Migration({
 		inProgress,
 		itemTitle,
 		name,
-		phaseLabel,
-		progress,
+		overallProgress,
 		statusDisplayType,
 		statusLabel,
 		warnings,
@@ -157,17 +159,46 @@ function Migration({
 				</ClayLayout.ContentCol>
 			</ClayLayout.ContentRow>
 
-			{inProgress && (
-				<>
-					<div className="mt-2">
-						{phaseLabel}
+			{inProgress && !bars?.length && (
+				<div className="mt-2">
+					{Liferay.Language.get('cms-migration-preparing')}
+				</div>
+			)}
 
-						{itemTitle && (
-							<span className="text-secondary"> {itemTitle}</span>
-						)}
+			{inProgress && !!bars?.length && (
+				<>
+					<div className="font-weight-semi-bold mt-2">
+						{Liferay.Language.get('cms-migration-overall')}
 					</div>
 
-					<ClayProgressBar value={progress} />
+					<ClayProgressBar
+						aria-label={Liferay.Language.get(
+							'cms-migration-overall'
+						)}
+						fillBarClassName="rounded-pill"
+						value={overallProgress ?? 0}
+					/>
+
+					<div className="cms-migration-bars mt-2">
+						{bars.map((bar) => (
+							<MigrationBar
+								bar={bar}
+								key={bar.key}
+								numberFormat={numberFormat}
+							/>
+						))}
+					</div>
+
+					{itemTitle && (
+						<div className="mt-2 text-secondary">
+							{sub(
+								Liferay.Language.get(
+									'cms-migration-migrating-x'
+								),
+								itemTitle
+							)}
+						</div>
+					)}
 				</>
 			)}
 

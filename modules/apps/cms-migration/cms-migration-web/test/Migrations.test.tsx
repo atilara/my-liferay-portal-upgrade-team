@@ -154,11 +154,12 @@ describe('Migrations', () => {
 
 		expect(screen.getByText('In Progress')).toBeInTheDocument();
 		expect(screen.getByText('Web Content')).toBeInTheDocument();
-		expect(screen.getByText('Welcome')).toBeInTheDocument();
-		expect(screen.getByRole('progressbar')).toHaveAttribute(
-			'aria-valuenow',
-			'40'
-		);
+		expect(
+			screen.getByText('cms-migration-migrating-x')
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole('progressbar', {name: 'cms-migration-overall'})
+		).toHaveAttribute('aria-valuenow', '40');
 
 		expect(reload).not.toHaveBeenCalled();
 
@@ -408,6 +409,53 @@ describe('Migrations', () => {
 
 		expect(
 			screen.queryByRole('button', {name: 'x-y'})
+		).not.toBeInTheDocument();
+	});
+
+	it('shows the overall progress and one bar per option of a migration in progress', () => {
+		render(
+			<Migrations
+				migrationIncomplete={true}
+				migrations={[IN_PROGRESS_MIGRATION]}
+			/>
+		);
+
+		expect(screen.getByText('cms-migration-overall')).toBeInTheDocument();
+		expect(
+			screen.getByRole('progressbar', {name: 'Web Content'})
+		).toHaveAttribute('aria-valuenow', '40');
+		expect(
+			screen.getByRole('progressbar', {name: 'Update Pages'})
+		).toHaveAttribute('aria-valuenow', '0');
+		expect(screen.getByText('Update Pages')).toBeInTheDocument();
+		expect(screen.getByText('4 / 10')).toBeInTheDocument();
+		expect(screen.getByText('0 / 5')).toBeInTheDocument();
+		expect(screen.getAllByRole('progressbar')).toHaveLength(3);
+	});
+
+	it('shows that a migration in progress is preparing while it has no bars', () => {
+		render(
+			<Migrations
+				migrationIncomplete={true}
+				migrations={[{...IN_PROGRESS_MIGRATION, bars: []}]}
+			/>
+		);
+
+		expect(screen.getByText('cms-migration-preparing')).toBeInTheDocument();
+		expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+		expect(screen.queryByText('0')).not.toBeInTheDocument();
+	});
+
+	it('does not show the item line while no item is being migrated', () => {
+		render(
+			<Migrations
+				migrationIncomplete={true}
+				migrations={[{...IN_PROGRESS_MIGRATION, itemTitle: ''}]}
+			/>
+		);
+
+		expect(
+			screen.queryByText('cms-migration-migrating-x')
 		).not.toBeInTheDocument();
 	});
 });
