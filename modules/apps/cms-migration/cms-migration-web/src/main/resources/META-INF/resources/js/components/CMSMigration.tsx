@@ -5,6 +5,7 @@
 
 import React from 'react';
 
+import useCMSMigrations from '../hooks/useCMSMigrations';
 import Configuration from './Configuration';
 import Migrations, {IMigration} from './Migrations';
 
@@ -13,14 +14,19 @@ interface IProps
 		React.ComponentProps<typeof Configuration>,
 		'migrationIncomplete'
 	> {
+	getCMSMigrationsURL: string;
 	migrations: IMigration[];
 }
 
 export default function CMSMigration({
-	migrations,
+	getCMSMigrationsURL,
+	migrations: initialMigrations,
 	...configurationProps
 }: IProps) {
-	const migrationIncomplete = migrations.some(({completed}) => !completed);
+	const {migrationIncomplete, migrations} = useCMSMigrations(
+		getCMSMigrationsURL,
+		initialMigrations
+	);
 
 	return (
 		<>
