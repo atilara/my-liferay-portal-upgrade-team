@@ -278,11 +278,12 @@ public class CMSMigrationBackgroundTaskExecutor
 		ObjectDefinitionMigrator objectDefinitionMigrator =
 			new ObjectDefinitionMigrator(
 				_ddmStructureLocalService, _ddmStructureVersionLocalService,
-				_language, _listTypeDefinitionLocalService,
-				_listTypeEntryLocalService, _objectDefinitionLocalService,
+				_journalArticleLocalService, _language,
+				_listTypeDefinitionLocalService, _listTypeEntryLocalService,
+				_objectDefinitionLocalService,
 				_objectDefinitionSettingLocalService, _objectFieldLocalService,
 				_objectFieldSettingLocalService, _objectFolderLocalService,
-				_objectRelationshipLocalService);
+				_objectRelationshipLocalService, _portal);
 
 		ResourcePermissionMigrator resourcePermissionMigrator =
 			new ResourcePermissionMigrator(

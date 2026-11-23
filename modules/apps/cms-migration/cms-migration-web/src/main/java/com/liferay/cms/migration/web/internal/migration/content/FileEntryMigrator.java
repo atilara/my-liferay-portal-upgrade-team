@@ -97,7 +97,7 @@ public class FileEntryMigrator {
 		_portal = portal;
 	}
 
-	public int getCount(CMSMigrationContext cmsMigrationContext) {
+	public long getCount(CMSMigrationContext cmsMigrationContext) {
 		return _dlFileEntryLocalService.getRepositoryFileEntriesCount(
 			cmsMigrationContext.getSourceGroupId());
 	}
@@ -204,7 +204,7 @@ public class FileEntryMigrator {
 	public void migrateAll(CMSMigrationContext cmsMigrationContext)
 		throws PortalException {
 
-		int count = getCount(cmsMigrationContext);
+		long count = getCount(cmsMigrationContext);
 
 		for (int start = 0; start < count; start += _BATCH_SIZE) {
 			List<DLFileEntry> dlFileEntries =

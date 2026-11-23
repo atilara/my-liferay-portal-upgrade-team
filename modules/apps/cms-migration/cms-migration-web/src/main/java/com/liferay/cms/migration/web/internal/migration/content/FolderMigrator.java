@@ -21,6 +21,9 @@ import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.model.ModelHintsUtil;
 import com.liferay.portal.kernel.util.HashMapBuilder;
 import com.liferay.portal.kernel.util.LocaleUtil;
+import com.liferay.portal.kernel.workflow.WorkflowConstants;
+
+import java.util.List;
 
 /**
  * Recreates the Web Content and Documents and Media folder trees as object
@@ -38,6 +41,33 @@ public class FolderMigrator {
 		_dlFolderLocalService = dlFolderLocalService;
 		_journalFolderLocalService = journalFolderLocalService;
 		_objectEntryFolderLocalService = objectEntryFolderLocalService;
+	}
+
+	public long getDLFoldersCount(CMSMigrationContext cmsMigrationContext) {
+		List<DLFolder> dlFolders = _dlFolderLocalService.getFolders(
+			cmsMigrationContext.getSourceGroupId(), false, StringPool.PERCENT,
+			false);
+
+		return dlFolders.size();
+	}
+
+	public long getJournalFoldersCount(
+		CMSMigrationContext cmsMigrationContext) {
+
+		long count = 0;
+
+		for (JournalFolder journalFolder :
+				_journalFolderLocalService.getFolders(
+					cmsMigrationContext.getSourceGroupId())) {
+
+			if (journalFolder.getStatus() ==
+					WorkflowConstants.STATUS_APPROVED) {
+
+				count++;
+			}
+		}
+
+		return count;
 	}
 
 	public void migrateDLFolders(CMSMigrationContext cmsMigrationContext)

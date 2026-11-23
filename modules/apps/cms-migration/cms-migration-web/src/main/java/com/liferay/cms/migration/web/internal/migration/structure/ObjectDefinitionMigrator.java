@@ -21,6 +21,7 @@ import com.liferay.dynamic.data.mapping.service.DDMStructureLocalService;
 import com.liferay.dynamic.data.mapping.service.DDMStructureVersionLocalService;
 import com.liferay.dynamic.data.mapping.util.comparator.StructureVersionVersionComparator;
 import com.liferay.journal.model.JournalArticle;
+import com.liferay.journal.service.JournalArticleLocalService;
 import com.liferay.list.type.entry.util.ListTypeEntryUtil;
 import com.liferay.list.type.model.ListTypeDefinition;
 import com.liferay.list.type.model.ListTypeEntry;
@@ -53,6 +54,7 @@ import com.liferay.portal.kernel.language.Language;
 import com.liferay.portal.kernel.util.HashMapBuilder;
 import com.liferay.portal.kernel.util.ListUtil;
 import com.liferay.portal.kernel.util.LocaleUtil;
+import com.liferay.portal.kernel.util.Portal;
 import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.portal.kernel.util.Validator;
 
@@ -79,6 +81,7 @@ public class ObjectDefinitionMigrator {
 	public ObjectDefinitionMigrator(
 		DDMStructureLocalService ddmStructureLocalService,
 		DDMStructureVersionLocalService ddmStructureVersionLocalService,
+		JournalArticleLocalService journalArticleLocalService,
 		Language language,
 		ListTypeDefinitionLocalService listTypeDefinitionLocalService,
 		ListTypeEntryLocalService listTypeEntryLocalService,
@@ -87,10 +90,12 @@ public class ObjectDefinitionMigrator {
 		ObjectFieldLocalService objectFieldLocalService,
 		ObjectFieldSettingLocalService objectFieldSettingLocalService,
 		ObjectFolderLocalService objectFolderLocalService,
-		ObjectRelationshipLocalService objectRelationshipLocalService) {
+		ObjectRelationshipLocalService objectRelationshipLocalService,
+		Portal portal) {
 
 		_ddmStructureLocalService = ddmStructureLocalService;
 		_ddmStructureVersionLocalService = ddmStructureVersionLocalService;
+		_journalArticleLocalService = journalArticleLocalService;
 		_language = language;
 		_listTypeDefinitionLocalService = listTypeDefinitionLocalService;
 		_listTypeEntryLocalService = listTypeEntryLocalService;
@@ -101,6 +106,7 @@ public class ObjectDefinitionMigrator {
 		_objectFieldSettingLocalService = objectFieldSettingLocalService;
 		_objectFolderLocalService = objectFolderLocalService;
 		_objectRelationshipLocalService = objectRelationshipLocalService;
+		_portal = portal;
 	}
 
 	public void addContentObjectField(
@@ -139,6 +145,37 @@ public class ObjectDefinitionMigrator {
 					ObjectFieldConstants.BUSINESS_TYPE_TEXT,
 					_getLabelMap("title"), true,
 					CMSMigrationConstants.OBJECT_FIELD_NAME_TITLE, true)));
+	}
+
+	public long getEstimatedRepeatableGroupsCount(
+			CMSMigrationContext cmsMigrationContext)
+		throws PortalException {
+
+		long count = 0;
+
+		for (DDMStructure ddmStructure :
+				_ddmStructureLocalService.getClassStructures(
+					cmsMigrationContext.getCompanyId(),
+					_portal.getClassNameId(JournalArticle.class))) {
+
+			int structureArticlesCount =
+				_journalArticleLocalService.getStructureArticlesCount(
+					cmsMigrationContext.getSourceGroupId(),
+					ddmStructure.getStructureId());
+
+			if (structureArticlesCount == 0) {
+				continue;
+			}
+
+			DDMForm ddmForm = ddmStructure.getFullHierarchyDDMForm();
+
+			count += _getEstimatedRepeatableGroupsCount(
+				cmsMigrationContext, 0,
+				CMSMigrationDDMFormFieldUtil.getLeafDDMFormFields(
+					ddmForm.getDDMFormFields()));
+		}
+
+		return count;
 	}
 
 	public ObjectDefinition getExternalVideoObjectDefinition(
@@ -620,6 +657,30 @@ public class ObjectDefinitionMigrator {
 		return objectFields;
 	}
 
+	private long _getEstimatedRepeatableGroupsCount(
+		CMSMigrationContext cmsMigrationContext, int depth,
+		List<DDMFormField> leafDDMFormFields) {
+
+		long count = 0;
+
+		for (DDMFormField ddmFormField : leafDDMFormFields) {
+			if (!_isRepeatableGroup(cmsMigrationContext, depth, ddmFormField)) {
+				continue;
+			}
+
+			count++;
+
+			count += _getEstimatedRepeatableGroupsCount(
+				cmsMigrationContext, depth + 1,
+				CMSMigrationDDMFormFieldUtil.getLeafDDMFormFields(
+					ListUtil.fromArray(
+						CMSMigrationDDMFormFieldUtil.
+							getNonrepeatableDDMFormField(ddmFormField))));
+		}
+
+		return count;
+	}
+
 	private Map<Locale, String> _getLabelMap(
 		LocalizedValue localizedValue, String defaultLabel) {
 
@@ -1056,6 +1117,21 @@ public class ObjectDefinitionMigrator {
 		return uniqueName;
 	}
 
+	private boolean _isRepeatableGroup(
+		CMSMigrationContext cmsMigrationContext, int depth,
+		DDMFormField ddmFormField) {
+
+		if (cmsMigrationContext.isMigrateRepeatableFields() &&
+			ddmFormField.isRepeatable() && (depth < TreeConstants.MAX_HEIGHT) &&
+			CMSMigrationDDMFormFieldUtil.isRepeatableGroupFieldSupported(
+				ddmFormField)) {
+
+			return true;
+		}
+
+		return false;
+	}
+
 	private List<DDMFormField> _partitionAndReportDDMFormFields(
 		CMSMigrationContext cmsMigrationContext, DDMStructure ddmStructure,
 		int depth, List<DDMFormField> leafDDMFormFields,
@@ -1112,6 +1188,7 @@ public class ObjectDefinitionMigrator {
 	private final DDMStructureLocalService _ddmStructureLocalService;
 	private final DDMStructureVersionLocalService
 		_ddmStructureVersionLocalService;
+	private final JournalArticleLocalService _journalArticleLocalService;
 	private final Language _language;
 	private final ListTypeDefinitionLocalService
 		_listTypeDefinitionLocalService;
@@ -1125,5 +1202,6 @@ public class ObjectDefinitionMigrator {
 	private final ObjectFolderLocalService _objectFolderLocalService;
 	private final ObjectRelationshipLocalService
 		_objectRelationshipLocalService;
+	private final Portal _portal;
 
 }
