@@ -11,7 +11,7 @@ import {useSessionState} from 'frontend-js-components-web';
 import {sub} from 'frontend-js-web';
 import React, {useEffect, useMemo} from 'react';
 
-import MigrationBar, {IMigrationBar} from './components/MigrationBar';
+import MigrationBar, {IMigrationBar} from './MigrationBar';
 
 export interface IMigration {
 	backgroundTaskId: number;
